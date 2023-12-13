@@ -1,0 +1,116 @@
+﻿;	P113接线图
+
+
+DATA SEGMENT
+	I8255_A	EQU	210H
+	I8255_B	EQU	212H
+	I8255_C	EQU	214H
+	I8255_CTR	EQU	216H
+	I08259_0	EQU 200H
+	I08259_1	EQU 201H
+	LEDGY	DB 3FH, 06H, 5BH, 4FH, 66H, 6DH, 7DH, 07H;共阴极数码管字型码表0 F\熄码
+			DB 7FH, 6FH, 77H, 7CH, 39H, 5EH, 79H, 71H
+			DB	40H
+	LEDBUF1	DB	10H,10H,10H,10H					;显示缓冲区偏移量
+	LEDBUF	DB	0,1,2,3,4,5,6,7					;按键偏移量表
+			DB	8,9,0AH,0BH,0CH,0DH,0EH,0FH
+	KEYTABLE	DB	0E1H,0D1H,0B1H,71H,0E2H,0D2H,0B2H,72H	;键值表
+				DB	0E4H,0D4H,0B4H,74H,0E8H,0D8H,0B8H,78H
+DATA	ENDS
+
+
+CODE	SEGMENT
+	ASSUME CS:CODE, DS:DATA
+START:		MOV		AX, DATA	;设数据寄存器的值
+			MOV		DS, AX
+MAIN:		MOV		DX, I8255_CTR;设8255方式0，C口高四位列输入，低四位行输出
+			MOV		AL, 10001000B
+			OUT		DX, AL	;写入8255控制寄存器
+			LEA		DI, KEYTABLE
+			MOV		DX, I08259_0	;ICW
+			MOV		AL, 00010011B
+			OUT		DX, AL
+			MOV		DX, I08259_1
+			MOV		AL, 00001000B
+			OUT		DX, AL
+			MOV		AL, 00000001B	; icw4
+			OUT		DX, AL
+			PUSH 	DS
+			MOV		AX, 0
+			MOV		DS, AX
+			LEA		AX, CS:INT_PROC	;写中断向量
+			MOV		SI, 08H			;BASE = 08
+			ADD		SI, SI		;TYPE NUM
+			ADD		SI,SI		;X4,将中断服务程序入口地址的偏移地址存
+								;放到物理地址为4XSI的字单元之中
+			MOV		DS:[SI], AX	;置入中断服务程序入口地址的偏移量
+			PUSH	CS
+			POP		AX
+			MOV		DS: [SI+2], AX	;置入中断服务程序入口地址的段基址值
+			POP		DS
+			IN		AL, DX			;OCW1
+			AND		AL, 1111110B
+			OUT		DX, AL
+			STI						;开中断
+LOP1:		CALL 	DISP1
+			JMP		LOP1
+DISP1:		MOV		SI, OFFSET LEDBUF1
+			MOV		BP, 01H
+			MOV		CX, 4
+DNEXT:		MOV		DX, I8255_C
+			MOV		AL, 00H
+			OUT		DX, AL			;关显示
+			MOV		AL, [SI]
+			MOV		BX, OFFSET LEDGY
+			XLAT
+			MOV		DX, I8255_A
+			OUT		DX, AL			;段码
+			MOV		DX, I8255_C
+			MOV		AX, BP
+			OUT		DX, AL			;位码
+			CALL 	DELAYL
+			CLC
+			RCL		BP, 1
+			INC		SI
+			LOOP 	DNEXT
+DEXIT:		RET
+
+INT_PROC:							;中断处理程序
+			PUSH	DX
+			PUSH	AX
+			PUSH	CX
+			PUSH	BX
+			MOV		DX, I8255_C ;
+			IN		AL, DX
+			MOV		CX, 16
+			MOV		BX, 0
+ILOP1:		CMP		AL, [DI+BX]
+			JZ		ILOP2
+			INC		BX
+			LOOP 	LOP1
+ILOP2:		MOV		LEDBUF1, BL
+			MOV		LEDBUF1+1, 0
+			MOV		LEDBUF1+2, 0
+			MOV		LEDBUF1+3, 0
+			MOV		DX, I08259_0	;0CW2
+			MOV		AL, 00100000B
+			OUT		DX, AL
+			POP 	BX
+			POP 	CX
+			POP 	AX
+			POP 	DX
+			STI						;置中断标志位
+			IRET
+DELAYL:		PUSH 	BX
+			PUSH 	CX
+			MOV 	BX, 10
+DE2:		MOV 	CX, 50
+DE1:		LOOP	DE1 
+			DEC		BX
+			JNZ 	DE2
+			POP 	CX
+			POP 	BX
+			RET
+CODE	ENDS
+		END		START
+		
