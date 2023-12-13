@@ -64,11 +64,14 @@ MA_LOP0:	;自动模式下循环
 			MOV		AX,BX				;调用参数准备AX被转换参数
 			MOV		BX,1				;明确转换tempt
 			CALL	CONVERT_DIS			;刷新显示温度值
-			NOP
-			MOV		BX,AX;暂时先这样
-			;这里缺一个将BL转换为合适的电机PWM参数值
+			MOV		BX,AX				;再拿回来转换参数给PWM
+			CALL	MAPPING_TEMP
 			CALL	A_SPED				;使用BL数据更改电机转速
-			;这里还缺SPEED修改程序
+			MOV		AX,24				;为改变速度显示做准备
+			SUB		AX,BX
+			SHR		AX,1
+			XOR		BX,BX
+			CALL	CONVERT_DIS			;改变速度显示
 			CMP		AUTO,0
 			JNZ		MA_LOP0
 			JZ		MA_LOP1
@@ -86,10 +89,31 @@ MA_LOP1:	;手动模式下循环
 			MOV		AX,BX				;调用参数准备AX被转换参数
 			MOV		BX,1				;明确转换tempt
 			CALL	CONVERT_DIS			;刷新显示温度值
+			;转速值由中断完成刷新
 			CMP		AUTO,0
 			JNZ		MA_LOP0
 			JZ		MA_LOP1
 MAIN	ENDP
+
+
+;温度与风扇转速映射关系
+;传入温度BX  输出对应转速BX
+MAPPING_TEMP	PROC	FAR
+			PUSH	AX
+			MOV		AX,BX
+			MOV		BL,10
+			DIV		BL
+			CLC
+			CMP		AL,3
+			JC		OUT_24				;传出PWM参数24
+			XOR		AH,AH
+			MOV		BX,27
+			SUB		BX,AX
+			JMP		OUT_FIN
+OUT_24:		MOV		BX,24
+OUT_FIN:
+			POP		AX
+MAPPING_TEMP	ENDP
 
 
 ;I8259管理两个脉冲button-IR0-IR2
@@ -211,6 +235,7 @@ BACK_MAIN:	POP		AX
 			STI
 			IRET
 BUTT_1      ENDP
+
 
 
 ;为显示SPEED和传感器电压所提供
