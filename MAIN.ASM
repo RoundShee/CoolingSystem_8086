@@ -15,8 +15,8 @@ I8255A		EQU		230H	;并行接口,管理LCD
 I8255B		EQU		231H
 I8255C		EQU		232H
 I8255K		EQU		233H
-HZ_ONE		DB		'CoolingSystem@RS'	;第一行16字符
-HZ_TWO		DB		'[AutoMode]      '	;第二行
+HZ_ONE		DB		'CoolingSystem   '	;第一行16字符
+HZ_TWO		DB		'[AutoMode]   @RS'	;第二行
 HZ_THR		DB		'TEMPT:    '		;第三行-提示符
 TEMPT 		DB		6 DUP (' ')			;第三行-变量
 HZ_FOU		DB		'SPEED:    '		;第四行
@@ -24,7 +24,7 @@ SPEED		DB		6 DUP (' ')			;第四行-变量
 HZ_ADR		DB		?				;存放显示行起始端口地址
 AUTO		DB		1				;当前系统处于的状态0-1
 VAR_SPED	DW		2				;电机PWM参数2-24
-MODE_AUTO	DB		'[AutoMode]      '
+MODE_AUTO	DB		'[AutoMode]   @RS'
 MODE_MANU	DB		'[ManualMode]    '
 DATA	ENDS
 
@@ -61,10 +61,14 @@ MA_LOP0:	;自动模式下循环
 			MOV		CH,4
 			CALL	LCD_DISP			;刷新第四行-当前转速
 			CALL	SEN_BACK			;获取温度传感器数据到BL
-			CALL	HEXTODEC			;用BL数据刷新TEMPT变量
+			MOV		AX,BX				;调用参数准备AX被转换参数
+			MOV		BX,1				;明确转换tempt
+			CALL	CONVERT_DIS			;刷新显示温度值
 			NOP
+			MOV		BX,AX;暂时先这样
 			;这里缺一个将BL转换为合适的电机PWM参数值
 			CALL	A_SPED				;使用BL数据更改电机转速
+			;这里还缺SPEED修改程序
 			CMP		AUTO,0
 			JNZ		MA_LOP0
 			JZ		MA_LOP1
@@ -79,8 +83,9 @@ MA_LOP1:	;手动模式下循环
 			MOV		CH,4
 			CALL	LCD_DISP			;刷新第四行-当前转速
 			CALL	SEN_BACK			;获取温度传感器数据到BL
-			CALL	HEXTODEC			;用BL数据刷新TEMPT变量
-			;规划中-这里才能响应IR2的中断
+			MOV		AX,BX				;调用参数准备AX被转换参数
+			MOV		BX,1				;明确转换tempt
+			CALL	CONVERT_DIS			;刷新显示温度值
 			CMP		AUTO,0
 			JNZ		MA_LOP0
 			JZ		MA_LOP1
@@ -179,7 +184,7 @@ BUTT_0      ENDP
 ;中断程序 IR1
 BUTT_1      PROC    FAR				;自动模式下调速
             PUSH	BX
-			
+			PUSH	AX
 			CMP		AUTO,0			;进入中断先判断在什么模式
 			JNZ		BACK_MAIN		;auto模式退出
 
@@ -193,47 +198,58 @@ LOW_S:		MOV		WORD PTR [VAR_SPED],24		;这里是将速度调为最低24
 AVOID:		XOR		BX,BX
 			MOV		BX,VAR_SPED
 			CALL	A_SPED
-
-BACK_MAIN:	POP		BX
+			;在中断中完成speed转换显示-挡位符合逻辑0-11
+			MOV		AX,VAR_SPED
+			MOV		BX,24
+			SUB		BX,AX
+			MOV		AX,BX
+			SHR		AX,1		
+			XOR		BX,BX
+			CALL	CONVERT_DIS
+BACK_MAIN:	POP		AX
+			POP		BX
 			STI
 			IRET
 BUTT_1      ENDP
 
 
-;16进制转10进制字符串形式函数
-HEXTODEC	PROC	FAR
+;为显示SPEED和传感器电压所提供
+;将AX内容转换为可供LCD显示的形式
+;BX提供告诉我到底转哪个0:SPEED	1:TEMPT
+CONVERT_DIS		PROC	FAR
 			PUSH	AX
 			PUSH	BX
 			PUSH	CX
 			PUSH	DX
+			PUSH	SI
+			CMP		BX,0		;判断意图
+			JZ		CVT_SPD		;跳转获得SPEED位置
+			; 获得TEMPT位置
+			MOV		SI,OFFSET	TEMPT
+			JMP		GET_LAST
+CVT_SPD:	MOV		SI,OFFSET	SPEED
+GET_LAST:	MOV		CX,5		;CX计数器用于遍历“万”“千”“百”“十”“个”五个位置
+			;循环处理部分
+CVT_LOP:	MOV		DX,0
+			MOV		BX,10
+			DIV		BX			;AX除以10，余数存入DX中
+			PUSH	DX			;将余数压入栈中-低位后出
+			LOOP	CVT_LOP
+			;循环写入部分
+CVT_LOP1:	MOV		CX,5		;弹出到位
+			POP		DX
+			ADD		DL,'0'
+			MOV		[SI],DL
+			INC		SI
+			LOOP	CVT_LOP1
+			POP		SI			;弹出恢复
+			POP		DX
+			POP		CX
+			POP		BX
+			POP		AX
+			RET
+CONVERT_DIS		ENDP
 
-			XOR		AX,AX
-			MOV		AH,BL
-			MOV		CL,4
-			SHR		AH,CL
-
-			MOV		CX,10
-			MOV		BX,OFFSET TEMPT
-
-convertLoop:
-    		xor dx, dx ; 清零DX寄存器
-    		div cx ; 除法操作，结果保存在AX和DX中
-
-    		add dl, '0' ; 将余数转换为ASCII码
-    		mov [bx], dl ; 存储到speed变量中
-    		inc bx ; 指向下一个位置
-
-    		test ah, ah ; 判断是否继续除法操作
-    		jnz convertLoop
-
-    		mov [bx], ' ' ; 字符串结束标志
-
-    		pop dx 
-			POP	cx 
-			POP	bx 
-			POP	ax
-    		ret
-HEXTODEC	ENDP
 
 ; 传感器初始化程序-ADC0809
 SEN_INI	PROC	FAR					; 无参数交互
