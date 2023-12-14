@@ -164,6 +164,7 @@ I8259INI    ENDP
 
 ;中断程序 IR0
 BUTT_0      PROC    FAR				;模式切换
+			CLI
             PUSH	CX
 			PUSH	BX
 			PUSH	AX
@@ -207,6 +208,7 @@ BUTT_0      ENDP
 
 ;中断程序 IR1
 BUTT_1      PROC    FAR				;自动模式下调速
+			CLI
             PUSH	BX
 			PUSH	AX
 			CMP		AUTO,0			;进入中断先判断在什么模式
@@ -250,9 +252,9 @@ CONVERT_DIS		PROC	FAR
 			CMP		BX,0		;判断意图
 			JZ		CVT_SPD		;跳转获得SPEED位置
 			; 获得TEMPT位置
-			MOV		SI,OFFSET	TEMPT
+			LEA		SI,TEMPT
 			JMP		GET_LAST
-CVT_SPD:	MOV		SI,OFFSET	SPEED
+CVT_SPD:	LEA		SI,SPEED
 GET_LAST:	MOV		CX,5		;CX计数器用于遍历“万”“千”“百”“十”“个”五个位置
 			;循环处理部分
 CVT_LOP:	MOV		DX,0
@@ -261,8 +263,8 @@ CVT_LOP:	MOV		DX,0
 			PUSH	DX			;将余数压入栈中-低位后出
 			LOOP	CVT_LOP
 			;循环写入部分
-CVT_LOP1:	MOV		CX,5		;弹出到位
-			POP		DX
+			MOV		CX,5		;弹出到位
+CVT_LOP1:	POP		DX
 			ADD		DL,'0'
 			MOV		[SI],DL
 			INC		SI
